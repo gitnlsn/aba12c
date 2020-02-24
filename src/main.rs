@@ -4,14 +4,14 @@ use std::io;
 use std::rc::Rc;
 
 struct Packet {
-    price: isize,
-    quantity: isize,
+    price: usize,
+    quantity: usize,
 }
 
 impl Packet {
-    pub fn new(price: isize, quantity: isize) -> Packet {
+    pub fn new(price: usize, quantity: usize) -> Packet {
         Packet {
-            price: price,
+            price: price.try_into().expect(""),
             quantity: quantity,
         }
     }
@@ -19,18 +19,16 @@ impl Packet {
     pub fn from_array(price_list: Vec<isize>) -> Vec<Rc<Packet>> {
         let mut packet_list: Vec<Rc<Packet>> = Vec::new();
         for index in 0..price_list.len() {
-            let quantity: isize = (index + 1).try_into().unwrap();
+            let quantity = index + 1;
             let price = price_list.get(index).unwrap();
             if price > &0 {
-                let new_packet = Rc::new(Packet::new(*price, quantity));
+                let price: usize = (*price).try_into().expect("");
+                let new_packet = Rc::new(Packet::new(price, quantity));
                 packet_list.push(new_packet);
             }
         }
         packet_list.sort_by(|a, b| {
-            if a.price == b.price {
-                return a.quantity.cmp(&b.quantity);
-            }
-            return a.price.cmp(&b.price);
+            return (a.price * b.quantity).cmp(&(b.price * a.quantity));
         });
         return packet_list;
     }
@@ -41,11 +39,11 @@ struct Possibility {
 }
 
 impl Possibility {
-    pub fn empty() -> Possibility {
-        Possibility {
-            packet_list: Vec::new(),
-        }
-    }
+    // pub fn empty() -> Possibility {
+    //     Possibility {
+    //         packet_list: Vec::new(),
+    //     }
+    // }
 
     pub fn new(avaliable_packets: &Vec<Rc<Packet>>, choices: Vec<usize>) -> Possibility {
         let mut new_possibilty = Possibility {
@@ -61,7 +59,7 @@ impl Possibility {
         return new_possibilty;
     }
 
-    fn total_cost(&mut self) -> isize {
+    fn total_cost(&mut self) -> usize {
         let mut sum = 0;
         for index in 0..self.packet_list.len() {
             let packet = self.packet_list.get(index).unwrap();
@@ -70,17 +68,13 @@ impl Possibility {
         return sum;
     }
 
-    fn total_apples(&mut self) -> isize {
+    fn total_apples(&mut self) -> usize {
         let mut sum = 0;
         for index in 0..self.packet_list.len() {
             let packet = self.packet_list.get(index).unwrap();
             sum = sum + packet.quantity;
         }
         return sum;
-    }
-
-    fn remaining(&mut self, max_packets: usize) -> usize {
-        max_packets - self.packet_list.len()
     }
 
     fn clone(&mut self) -> Possibility {
@@ -96,16 +90,24 @@ impl Possibility {
     fn add(&mut self, new_packet: &Rc<Packet>) {
         self.packet_list.push(Rc::clone(new_packet));
     }
+    
+    fn merge(&mut self, other: &Possibility) -> Possibility {
+        let mut new_possibilty = self.clone();
+        for packet in other.packet_list.iter() {
+            new_possibilty.packet_list.push(Rc::clone(packet));
+        }
+        return new_possibilty;
+    }
 }
 
 struct Problem {
     packet_list: Vec<Rc<Packet>>,
     max_packets: usize,
-    required_apples: isize,
+    required_apples: usize,
 }
 
 impl Problem {
-    pub fn new(prices: Vec<isize>, max_packets: usize, required_apples: isize) -> Problem {
+    pub fn new(prices: Vec<isize>, max_packets: usize, required_apples: usize) -> Problem {
         let packet_list = Packet::from_array(prices);
         return Problem {
             packet_list: packet_list,
@@ -115,59 +117,65 @@ impl Problem {
     }
 
     fn solution(&mut self) -> Option<Possibility> {
-        let initial_possibility = RefCell::new(Possibility::empty());
-        match self.search(initial_possibility) {
-            Some(solution) => return Some(solution.into_inner()),
-            None => return None,
+        if self.packet_list.len() == 0 {
+            return None;
         }
-    }
+        
+        let mut deeper_problem = self.clone();
+        let next_packet = deeper_problem.packet_list.remove(0);
 
-    fn search(&mut self, possibility: RefCell<Possibility>) -> Option<RefCell<Possibility>> {
-        // for item in possibility.borrow().packet_list.iter() {
-        //     print!("({},{}), ", item.quantity, item.price);
-        // }
-        // println!();
-
-        if possibility.borrow_mut().total_apples() == self.required_apples {
+        let mut step_length: usize = self.required_apples / next_packet.quantity;
+        let remainer = self.required_apples % next_packet.quantity;
+        
+        if remainer == 0 && step_length <= self.max_packets {
+            let possibility = Possibility::new(&self.packet_list, vec![step_length]);
             return Some(possibility);
         }
 
-        if possibility.borrow_mut().remaining(self.max_packets) == 0 {
+        if self.max_packets == 0 {
             return None;
         }
-
-        let new_possibility_list: Vec<RefCell<Possibility>> = self
-            .packet_list
-            .iter()
-            .map(|packet| {
-                let new_possibilty = RefCell::new(possibility.borrow_mut().clone());
-                new_possibilty.borrow_mut().add(packet);
-                return new_possibilty;
-            })
-            .collect();
-
-        let mut best_solution: Option<RefCell<Possibility>> = None;
-        let mut current_cost = -1;
-        for new_possibilty in new_possibility_list {
-            match self.search(new_possibilty) {
-                Some(solution) => {
-                    let no_solution_yet = current_cost == -1;
-                    if no_solution_yet {
-                        current_cost = solution.borrow_mut().total_cost();
-                        best_solution = Some(solution);
-                        continue;
-                    }
-                    let possible_better_cost = solution.borrow_mut().total_cost();
-                    if possible_better_cost < current_cost {
-                        current_cost = solution.borrow_mut().total_cost();
-                        best_solution = Some(solution);
-                    }
-                }
-                None => continue,
-            }
+        
+        if step_length > self.max_packets {
+            step_length = self.max_packets;
         }
-
-        return best_solution;
+        
+        let mut best_possibility: Option<Possibility> = None;
+        let mut best_cost = 0;
+        loop {
+            let included_apples = step_length * next_packet.quantity;
+            
+            deeper_problem.max_packets = self.max_packets - step_length;
+            deeper_problem.required_apples = self.required_apples - included_apples;
+            
+            match deeper_problem.solution() {
+                Some(mut inner_possibility) => {
+                    if best_cost == 0 || inner_possibility.total_cost() < best_cost {
+                        best_cost = inner_possibility.total_cost();
+                        let mut possibility = Possibility::new(&self.packet_list, vec![step_length]);
+                        let merged_possibility = possibility.merge(&inner_possibility);
+                        best_possibility = Some(merged_possibility);
+                    }
+                },
+                None => {},
+            }
+            if step_length == 0 { break; }
+            step_length = step_length - 1;
+        }
+        
+        return best_possibility;
+    }
+    
+    fn clone(&mut self) -> Problem {
+        let mut new_problem = Problem {
+            packet_list: Vec::new(),
+            max_packets: self.max_packets,
+            required_apples: self.required_apples,
+        };
+        for packet in self.packet_list.iter() {
+            new_problem.packet_list.push(Rc::clone(packet));
+        }
+        return new_problem;
     }
 }
 
@@ -222,14 +230,6 @@ fn test_possibility_total_quantity() {
 }
 
 #[test]
-fn test_possibility_remaining() {
-    let packet_list = Packet::from_array(vec![1, 2, 3, 4, 5]);
-
-    assert!(Possibility::new(&packet_list, vec![0, 0, 3]).remaining(5) == 2);
-    assert!(Possibility::new(&packet_list, vec![0, 2, 3]).remaining(5) == 0);
-}
-
-#[test]
 fn test_possibility_clone() {
     let packet_list = Packet::from_array(vec![1, 2, 3, 4, 5]);
 
@@ -239,32 +239,31 @@ fn test_possibility_clone() {
     /* clone is equal to original */
     assert!(initial.borrow_mut().total_cost() == 9);
     assert!(initial.borrow_mut().total_apples() == 9);
-    assert!(initial.borrow_mut().remaining(5) == 2);
 
     assert!(clone.borrow_mut().total_cost() == 9);
     assert!(clone.borrow_mut().total_apples() == 9);
-    assert!(clone.borrow_mut().remaining(5) == 2);
 
     clone.borrow_mut().add(packet_list.get(4).unwrap());
 
     /* clone modification won't change original item */
     assert!(initial.borrow_mut().total_cost() == 9);
     assert!(initial.borrow_mut().total_apples() == 9);
-    assert!(initial.borrow_mut().remaining(5) == 2);
 
     /* clone is correct */
     assert!(clone.borrow_mut().total_cost() == 14);
     assert!(clone.borrow_mut().total_apples() == 14);
-    assert!(clone.borrow_mut().remaining(5) == 1);
 }
 
 #[test]
 fn test_problem_solving() {
-    assert!(Problem::new(vec![1, 2, 3, 4, 5], 5, 5).solution().unwrap().total_cost() == 5);
-    assert!(Problem::new(vec![-1, -1, 4, 5, -1], 3, 5).solution().is_none());
-    assert!(Problem::new(vec![10, 2, 3, 4], 4, 7).solution().unwrap().total_cost() == 7);
-    assert!(Problem::new(vec![10,2,3,4], 10, 5).solution().unwrap().total_cost() == 5);
-    // assert!(Problem::new(vec![10,2,3,4], 10, 1).solution().unwrap().total_cost() == 10);
+    assert!(Problem::new(vec![1,2,3,4,5], 5, 5).solution().unwrap().total_cost() == 5);
+    assert!(Problem::new(vec![10,2,3,4], 10, 1).solution().unwrap().total_cost() == 10);
+    match Problem::new(vec![-1,-1,4,5,-1], 3, 5).solution() {
+        Some(_) => panic!("Not supposed to have a solution"),
+        None => assert!(true),
+    };
+    assert!(Problem::new(vec![10,2,3,4], 4, 7).solution().unwrap().total_cost() == 7);
+    assert!(Problem::new(vec![10,2,3,4], 15, 5).solution().unwrap().total_cost() == 5);
 }
 
 fn read_input() -> String {
@@ -285,9 +284,9 @@ fn read_vec() -> Vec<isize> {
     return input;
 }
 
-fn read_dup() -> (isize, isize) {
+fn read_dup() -> (usize, usize) {
     let input = read_vec();
-    return (input[0], input[1]);
+    return (input[0].try_into().expect(""), input[1].try_into().expect(""));
 }
 
 fn main() {
@@ -296,6 +295,6 @@ fn main() {
     for _ in 0..total_tests {
         let (max_packets, required_apples) = read_dup();
         let prices = read_vec();
-        let problem = Problem::new(prices, max_packets.try_into().expect(""), required_apples);
+        let problem = Problem::new(prices, max_packets, required_apples);
     }
 }
