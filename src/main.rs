@@ -43,12 +43,6 @@ struct Possibility {
 }
 
 impl Possibility {
-    // pub fn empty() -> Possibility {
-    //     Possibility {
-    //         packet_list: Vec::new(),
-    //     }
-    // }
-
     pub fn new(avaliable_packets: &Vec<Rc<Packet>>, choices: Vec<usize>) -> Possibility {
         let mut new_possibilty = Possibility {
             packet_list: Vec::new(),
