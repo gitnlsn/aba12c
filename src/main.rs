@@ -106,14 +106,7 @@ impl Problem {
         let mut step_length: usize = self.required_apples / next_packet.quantity;
         let remainer = self.required_apples % next_packet.quantity;
         
-        print!("Iterating over ({}, {}) with:", self.required_apples, self.max_packets);
-        for p in self.packet_list.iter() {
-            print!("({}, {}),", p.price, p.quantity);
-        }
-        println!();
-        
         if remainer == 0 && step_length <= self.max_packets {
-            println!("Found solution: ({}, {}, {})", next_packet.price, next_packet.quantity, step_length);
             let possibility = Possibility::new(&self.packet_list, vec![step_length]);
             return Some(possibility);
         }
